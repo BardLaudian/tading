@@ -25,53 +25,44 @@ def get_historical_data(symbol, interval, start_str, end_str=None):
         df[col] = df[col].astype(float)
     return df
 
-# Obtener datos históricos (puedes ajustar las fechas según tus necesidades)
+# Obtener datos históricos
 symbol = 'ETHUSDT'
-interval = '1m'  # O '15m' para velas de 15 minutos
-start_str = '1 days ago UTC'  # Ajusta según la cantidad de datos históricos que necesites
+interval = '1m'  # Velas de 1 minuto
+start_str = '12 hour ago UTC'  # 5 años de datos históricos
 
 df = get_historical_data(symbol, interval, start_str)
 
 # Calcular indicadores técnicos usando la biblioteca ta
-df['RSI'] = ta.rsi(df['close'], length=10)
-macd = ta.macd(df['close'], fast=5, slow=35, signal=5)
-# Añadir los resultados al DataFrame original
+df['RSI'] = ta.rsi(df['close'])
+df['SMA_50'] = ta.sma(df['close'], length=50)
+df['SMA_200'] = ta.sma(df['close'], length=200)
+df['EMA_50'] = ta.ema(df['close'], length=50)
+df['EMA_200'] = ta.ema(df['close'], length=200)
+macd = ta.macd(df['close'])
 df = pd.concat([df, macd], axis=1)
+# Calcular Bandas de Bollinger
+bollinger = ta.bbands(df['close'])
 
-# Eliminar filas con valores NaN en 'Adj Close'
-df.dropna(subset=['MACDh_5_35_5'], inplace=True)
+# Asegúrate de que las columnas de Bandas de Bollinger tienen los nombres esperados
+# Los nombres predeterminados pueden variar, así que ajusta los nombres de las columnas según sea necesario
+expected_bollinger_columns = ['BBL_20_2.0', 'BBM_20_2.0', 'BBU_20_2.0']
+actual_bollinger_columns = bollinger.columns.tolist()
 
-#buy_threshold_rsi, sell_threshold_rsi, macd_diff = [68.41852, 25.855667, -4.553406]
-#buy_threshold_rsi, sell_threshold_rsi, macd_diff = [63.31822087984028, 57.383478518064685, 1.7732106095533613]
-buy_threshold_rsi, sell_threshold_rsi, macd_diff = [40.96290750887992, 35.914535267567864, -13.96354288595775]
-# Crear la columna de etiquetas basada en el precio de cierre y los indicadores técnicos
-def crear_etiqueta(row):
-    # Comprobar condiciones para "Comprar"
-    if row['RSI'] < buy_threshold_rsi and (row['MACD_5_35_5'] - row['MACDs_5_35_5']) > macd_diff:
-        return 1
-    # Comprobar condiciones para "Vender"
-    elif row['RSI'] > sell_threshold_rsi and (row['MACD_5_35_5'] - row['MACDs_5_35_5']) < -macd_diff:
-        return 2
-    # Si no se cumplen las condiciones anteriores, "Mantener"
-    else:
-        return 0
+# Cambiar los nombres de las columnas de las Bandas de Bollinger si no coinciden con los esperados
+if set(expected_bollinger_columns) != set(actual_bollinger_columns):
+    rename_dict = {actual: expected for actual, expected in zip(actual_bollinger_columns, expected_bollinger_columns)}
+    bollinger.rename(columns=rename_dict, inplace=True)
 
-# Aplicar la función para crear la columna de etiquetas
-df['Etiqueta'] = df.apply(crear_etiqueta, axis=1)
+# Añadir las Bandas de Bollinger al DataFrame principal
+df = pd.concat([df, bollinger], axis=1)
 
-# Eliminar columnas innecesarias
-df.dropna(inplace=True)
-df.reset_index(inplace = True)
-df.drop(['timestamp', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'], axis=1, inplace=True)
+# Preparar el DataFrame para el modelo
+df['next_close'] = df['close'].shift(-1)  # Precio de cierre del próximo minuto
+df.dropna(inplace=True)  # Eliminar filas con valores NaN
 
-pd.set_option('display.max_columns', None)
+# Seleccionar características relevantes
+features = ['open', 'high', 'low', 'close', 'volume', 'RSI', 'SMA_50', 'SMA_200', 'EMA_50', 'EMA_200', 'MACD_12_26_9', 'MACDh_12_26_9', 'MACDs_12_26_9', 'BBL_20_2.0', 'BBM_20_2.0', 'BBU_20_2.0', 'next_close']
+df = df[features]
 
-df.to_csv('test_complete_dataset.csv')
-
-print(df.head(20))
-# Contar el número de filas para cada etiqueta
-conteo_etiquetas = df['Etiqueta'].value_counts()
-
-# Imprimir el conteo de etiquetas
-print("Conteo de filas por etiqueta:")
-print(conteo_etiquetas)
+# Guardar el conjunto de datos procesado
+df.to_csv('processed_dataset.csv')
