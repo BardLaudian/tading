@@ -27,8 +27,8 @@ def get_historical_data(symbol, interval, start_str, end_str=None):
 
 # Obtener datos históricos
 symbol = 'ETHUSDT'
-interval = '1m'  # Velas de 1 minuto
-start_str = '12 hour ago UTC'  # 5 años de datos históricos
+interval = '15m'  # Velas de 1 minuto
+start_str = '30 day ago UTC'  # 5 años de datos históricos
 
 df = get_historical_data(symbol, interval, start_str)
 
@@ -61,8 +61,9 @@ df['next_close'] = df['close'].shift(-1)  # Precio de cierre del próximo minuto
 df.dropna(inplace=True)  # Eliminar filas con valores NaN
 
 # Seleccionar características relevantes
-features = ['open', 'high', 'low', 'close', 'volume', 'RSI', 'SMA_50', 'SMA_200', 'EMA_50', 'EMA_200', 'MACD_12_26_9', 'MACDh_12_26_9', 'MACDs_12_26_9', 'BBL_20_2.0', 'BBM_20_2.0', 'BBU_20_2.0', 'next_close']
+#features = ['open', 'high', 'low', 'close', 'volume', 'RSI', 'SMA_50', 'SMA_200', 'EMA_50', 'EMA_200', 'MACD_12_26_9', 'MACDh_12_26_9', 'MACDs_12_26_9', 'BBL_20_2.0', 'BBM_20_2.0', 'BBU_20_2.0', 'next_close']
+features = ['open', 'high', 'low', 'close', 'volume', 'RSI', 'MACD_12_26_9', 'MACDh_12_26_9', 'MACDs_12_26_9', 'next_close']
 df = df[features]
 
 # Guardar el conjunto de datos procesado
-df.to_csv('processed_dataset.csv')
+df.to_csv('mes_complete_dataset.csv')

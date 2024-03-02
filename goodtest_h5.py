@@ -1,77 +1,61 @@
-import pandas as pd
 import numpy as np
-import joblib
-from keras.models import load_model
+import pandas as pd
 import matplotlib.pyplot as plt
+from keras.models import load_model
 from tqdm import tqdm
 
-# Definir la clase Portfolio
 class Portfolio:
     def __init__(self, usdt_balance, eth_balance=0):
         self.usdt_balance = usdt_balance
         self.eth_balance = eth_balance
 
-    def buy_eth(self, eth_amount, eth_price):
-        usdt_required = eth_amount * eth_price
-        if usdt_required <= self.usdt_balance:
-            self.eth_balance += eth_amount
-            self.usdt_balance -= usdt_required
-            return eth_amount
-        else:
-            return 0
-
-    def sell_eth(self, eth_amount, eth_price):
-        if eth_amount <= self.eth_balance:
-            usdt_earned = eth_amount * eth_price
-            self.usdt_balance += usdt_earned
-            self.eth_balance -= eth_amount
-            return usdt_earned
-        else:
-            return 0
+    def execute_action(self, action, eth_price):
+        if action == 1:  # Comprar ETH
+            if self.usdt_balance > 0:
+                eth_bought = self.usdt_balance / eth_price
+                self.eth_balance += eth_bought
+                self.usdt_balance = 0
+                return eth_bought, 0
+        elif action == 2:  # Vender ETH
+            if self.eth_balance > 0:
+                usdt_earned = self.eth_balance * eth_price
+                self.usdt_balance += usdt_earned
+                self.eth_balance = 0
+                return 0, usdt_earned
+        return 0, 0
 
 # Cargar el conjunto de datos
-df = pd.read_csv('complete_dataset.csv', parse_dates=True, index_col=0)
+df = pd.read_csv('year_complete_dataset.csv', index_col=0)
 
-# Cargar el modelo y el scaler
-model = load_model('mi_modelo_pca.h5')
-scaler = joblib.load('scaler.save')
-
-# Preparar los datos para la predicción
-def prepare_data_for_prediction(df, backcandles, scaler):
-    data_normalized = scaler.transform(df)
-    X = np.array([data_normalized[-backcandles:, :-1]])  # Excluye las dos últimas columnas
-    return X
-
-# Estrategia de trading actualizada
-def trading_strategy(prediction):
-    if prediction == 1:
-        return 'buy'
-    elif prediction == 2:
-        return 'sell'
-    else:
-        return 'hold'
+# Cargar el modelo DQN
+model = load_model('dqn_trading_model_simple.h5')
 
 # Inicializar la cartera
-portfolio = Portfolio(usdt_balance=300)  # Comienza con 1000 USDT
-backcandles = 60
+portfolio = Portfolio(usdt_balance=300)
 transactions = []
 
 # Iterar a través del conjunto de datos
-for i in tqdm(range(backcandles, len(df) - 1), desc='Procesando'):
-    current_df = df.iloc[(i - backcandles):i]
-    X_recent = prepare_data_for_prediction(current_df, backcandles, scaler)
-    prediction = model.predict(X_recent, verbose=0)[0]
-    decision = trading_strategy(np.argmax(prediction))  # Use np.argmax for categorical predictions
+for i in tqdm(range(len(df)), desc='Procesando transacciones'):
+    current_state = df.iloc[i].to_numpy()
+    # Asegúrate de que tenga la forma adecuada, rellenando hasta 25 características
+    current_state = np.pad(current_state, (0, max(0, 18 - len(current_state))), 'constant')
+    current_state = current_state.reshape(1, -1)  # Redimensionar para que sea compatible con el modelo
+
+    try:
+        action = np.argmax(model.predict(current_state, verbose=0)[0])  # Decidir la acción
+    except KeyboardInterrupt:
+        raise
+    except Exception as e:
+        print(f"Error al predecir la acción en el paso {i}: {e}")
+        action = 0
 
     current_price = df.iloc[i]['close']
-    eth_amount = 0.1
+    eth_bought, usdt_earned = portfolio.execute_action(action, current_price)
 
-    if decision == 'buy' and portfolio.usdt_balance >= current_price * eth_amount:
-        portfolio.buy_eth(eth_amount, current_price)
-        transactions.append(('buy', df.index[i], current_price))
-    elif decision == 'sell' and portfolio.eth_balance >= eth_amount:
-        portfolio.sell_eth(eth_amount, current_price)
-        transactions.append(('sell', df.index[i], current_price))
+    if eth_bought > 0:
+        transactions.append(('buy', df.index[i], current_price, eth_bought))
+    elif usdt_earned > 0:
+        transactions.append(('sell', df.index[i], current_price, usdt_earned))
 
 last_price = df['close'].iloc[-1]
 total_value = portfolio.usdt_balance + (portfolio.eth_balance * last_price)
@@ -83,10 +67,13 @@ print(f"Valor total de la cartera: {total_value:.2f} USDT")
 
 print("\nTransacciones realizadas:")
 for transaction in transactions:
-    action, date, price = transaction
-    print(f"{date}: {action.capitalize()} a {price:.2f} USDT")
+    action, date, price, amount = transaction
+    if action == 'buy':
+        print(f"{date}: Compra de {amount:.4f} ETH a {price:.2f} USDT")
+    elif action == 'sell':
+        print(f"{date}: Venta, ganancia de {amount:.2f} USDT a {price:.2f} USDT")
 
-prices = df['close'][backcandles:len(df) - 1]
+prices = df['close']
 plt.figure(figsize=(14, 7))
 plt.plot(prices, label='Precio de ETH', color='blue')
 for transaction in transactions:
